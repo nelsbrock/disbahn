@@ -1,0 +1,24 @@
+[package]
+name = "disbahn"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+rss = "2.0"
+reqwest = {version = "0.11", default-features = false, features = ["rustls"]}
+tokio = {version = "1.28", features = ["rt-multi-thread", "signal"]}
+lazy-regex = "2.5.0"
+#time = {version = "0.3", features = ["local-offset" ,"macros", "parsing"]}
+chrono = "0.4.25"
+chrono-tz = "0.8.2"
+anyhow = "1.0.71"
+log = "0.4.18"
+env_logger = "0.10.0"
+dotenvy = "0.15.7"
+
+[dependencies.serenity]
+version = "0.11"
+default-features = false
+features = ["builder", "cache", "client", "gateway", "http", "model", "utils", "rustls_backend"]
