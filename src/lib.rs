@@ -7,8 +7,9 @@ use anyhow::{anyhow, Context};
 use chrono::{DateTime, NaiveDateTime, TimeZone};
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl};
 use lazy_regex::regex;
-use log::{debug, info};
+use log::{debug, error, info};
 use reqwest::IntoUrl;
+use rss::Item;
 use serenity::http::Http;
 use serenity::json::Value;
 use serenity::model::channel::Embed;
@@ -139,8 +140,6 @@ impl DisbahnClient {
     }
 
     pub async fn refresh(&mut self) -> anyhow::Result<()> {
-        use crate::database::schema::posts::{self, dsl};
-
         debug!("Refreshing RSS feed ...");
         let channel = Self::get_rss_channel(&self.rss_url)
             .await
@@ -150,63 +149,70 @@ impl DisbahnClient {
         let items = channel.items();
 
         for item in items {
-            let guid = item.guid().ok_or(anyhow!("Missing GUID"))?.value();
-            let pub_date_str = item.pub_date().ok_or(anyhow!("Missing publication date"))?;
-            let pub_datetime = DateTime::parse_from_rfc2822(pub_date_str)
-                .with_context(|| {
-                    format!("Unable to parse publication date string {pub_date_str:?}")
-                })?
-                .naive_utc()
-                .and_utc();
-
-            let existing_post: Option<Post> = posts
-                .filter(dsl::webhook_id.eq(i64::from_le_bytes(self.webhook.id.0.to_le_bytes())))
-                .filter(dsl::announcement_id.eq(guid))
-                .first(self.database.conn())
-                .optional()
-                .with_context(|| "Error loading posts from database")?;
-
-            if let Some(existing_post) = existing_post {
-                if existing_post.last_updated().and_utc() < pub_datetime {
-                    info!("Updated item: {guid}");
-                    let embed = Self::item_to_embed(item)?;
-                    self.webhook
-                        .edit_message(&self.http, existing_post.message_id(), |w| {
-                            w.embeds(vec![embed])
-                        })
-                        .await
-                        .with_context(|| "Failed to edit message")?;
-
-                    diesel::update(
-                        posts.find((guid, i64::from_le_bytes(self.webhook.id.0.to_le_bytes()))),
-                    )
-                    .set(dsl::last_updated.eq(pub_datetime.naive_utc()))
-                    .execute(self.database.conn())
-                    .with_context(|| "Error updating post in database")?;
-                }
-            } else {
-                info!("New item: {guid}");
-                let embed = Self::item_to_embed(item)?;
-                let message = self
-                    .webhook
-                    .execute(&self.http, true, |w| w.embeds(vec![embed]))
-                    .await
-                    .with_context(|| "Failed to send message")?
-                    .with_context(|| "Discord did not return a message id")?;
-
-                diesel::insert_into(posts::table)
-                    .values(NewPost::new(
-                        guid,
-                        self.webhook.id,
-                        message.id,
-                        pub_datetime.naive_utc(),
-                    ))
-                    .execute(self.database.conn())
-                    .with_context(|| "Error inserting new post into database")?;
+            if let Err(err) = self.refresh_item(item).await {
+                error!("Error refreshing item: {err}");
             }
         }
 
         debug!("Done.");
+        Ok(())
+    }
+
+    async fn refresh_item(&mut self, item: &Item) -> anyhow::Result<()> {
+        use crate::database::schema::posts::{self, dsl};
+
+        let guid = item.guid().ok_or(anyhow!("Missing GUID"))?.value();
+        let pub_date_str = item.pub_date().ok_or(anyhow!("Missing publication date"))?;
+        let pub_datetime = DateTime::parse_from_rfc2822(pub_date_str)
+            .with_context(|| format!("Unable to parse publication date string {pub_date_str:?}"))?
+            .naive_utc()
+            .and_utc();
+
+        let existing_post: Option<Post> = posts
+            .filter(dsl::webhook_id.eq(i64::from_le_bytes(self.webhook.id.0.to_le_bytes())))
+            .filter(dsl::announcement_id.eq(guid))
+            .first(self.database.conn())
+            .optional()
+            .with_context(|| "Error loading posts from database")?;
+
+        if let Some(existing_post) = existing_post {
+            if existing_post.last_updated().and_utc() < pub_datetime {
+                info!("Updated item: {guid}");
+                let embed = Self::item_to_embed(item)?;
+                self.webhook
+                    .edit_message(&self.http, existing_post.message_id(), |w| {
+                        w.embeds(vec![embed])
+                    })
+                    .await
+                    .with_context(|| "Failed to edit message")?;
+
+                diesel::update(
+                    posts.find((guid, i64::from_le_bytes(self.webhook.id.0.to_le_bytes()))),
+                )
+                .set(dsl::last_updated.eq(pub_datetime.naive_utc()))
+                .execute(self.database.conn())
+                .with_context(|| "Error updating post in database")?;
+            }
+        } else {
+            info!("New item: {guid}");
+            let embed = Self::item_to_embed(item)?;
+            let message = self
+                .webhook
+                .execute(&self.http, true, |w| w.embeds(vec![embed]))
+                .await
+                .with_context(|| "Failed to send message")?
+                .with_context(|| "Discord did not return a message id")?;
+
+            diesel::insert_into(posts::table)
+                .values(NewPost::new(
+                    guid,
+                    self.webhook.id,
+                    message.id,
+                    pub_datetime.naive_utc(),
+                ))
+                .execute(self.database.conn())
+                .with_context(|| "Error inserting new post into database")?;
+        }
         Ok(())
     }
 }
