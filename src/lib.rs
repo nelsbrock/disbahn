@@ -69,8 +69,15 @@ impl DisbahnClient {
         }
     }
 
+    fn icon_name_to_colour(name: &str) -> u32 {
+        match name {
+            "HIM1" => 0xf5c211,
+            "HIM2" => 0xc1121c,
+            _ => 0x154889,
+        }
+    }
+
     fn item_to_embed(item: &rss::Item) -> anyhow::Result<Value> {
-        const COLOUR: u32 = 0x008d4f;
         const FOOTER_ICON_URL: &str = "https://www.zuginfo.nrw/img/customer/apple-touch-icon.png";
 
         let categories = item.categories();
@@ -116,7 +123,7 @@ impl DisbahnClient {
                 e.title(title)
             .url(link)
             .thumbnail(icon_url)
-            .colour(COLOUR)
+            .colour(Self::icon_name_to_colour(icon))
             .description(description)
             .field("Beginn:", format!("<t:{}:F>", validity_begin), true)
             .field("Ende:", format!("<t:{}:F>", validity_end), true)
