@@ -1,5 +1,11 @@
+pub mod database;
+
+use crate::database::models::{NewPost, Post};
+use crate::database::schema::posts::dsl::posts;
+use crate::database::Database;
 use anyhow::{anyhow, Context};
-use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, NaiveDateTime, TimeZone};
+use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl};
 use lazy_regex::regex;
 use log::{debug, info};
 use reqwest::IntoUrl;
@@ -7,51 +13,21 @@ use serenity::http::Http;
 use serenity::json::Value;
 use serenity::model::channel::Embed;
 use serenity::model::webhook::Webhook;
-use std::borrow::Cow;
-use std::env;
 
-struct RefreshDb(sled::Db);
-
-impl RefreshDb {
-    fn get(&self, guid: &str) -> anyhow::Result<Option<DateTime<Utc>>> {
-        self.0
-            .get(guid)
-            .with_context(|| "db error: unable to get value")?
-            .map(|b| {
-                bincode::deserialize::<i64>(&b)
-                    .with_context(|| "db error: unable to deserialize i64")
-            })
-            .transpose()?
-            .map(|i| {
-                Utc.timestamp_opt(i, 0)
-                    .single()
-                    .with_context(|| "db error: unable to parse timestamp from i64")
-            })
-            .transpose()
-    }
-
-    fn insert(&self, guid: String, datetime: DateTime<Utc>) -> anyhow::Result<()> {
-        let timestamp = datetime.timestamp();
-        let bytes = bincode::serialize(&timestamp).with_context(|| "db error")?;
-        self.0.insert(guid, bytes).with_context(|| "db error")?;
-        Ok(())
-    }
-}
-
-struct DisbahnClient {
+pub struct DisbahnClient {
+    database: Database,
     webhook: Webhook,
     http: Http,
     rss_url: String,
-    known_guids: RefreshDb,
 }
 
 impl DisbahnClient {
-    fn new(webhook: Webhook, http: Http, rss_url: String, known_guids: RefreshDb) -> Self {
+    pub fn new(database: Database, webhook: Webhook, http: Http, rss_url: String) -> Self {
         Self {
+            database,
             webhook,
             http,
             rss_url,
-            known_guids,
         }
     }
 
@@ -93,7 +69,7 @@ impl DisbahnClient {
         }
     }
 
-    fn item_to_embed(item: &rss::Item, is_update: bool) -> anyhow::Result<Value> {
+    fn item_to_embed(item: &rss::Item) -> anyhow::Result<Value> {
         const COLOUR: u32 = 0x008d4f;
         const FOOTER_ICON_URL: &str = "https://www.zuginfo.nrw/img/customer/apple-touch-icon.png";
 
@@ -135,12 +111,9 @@ impl DisbahnClient {
 
         let pub_timestamp = pub_datetime.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
 
-        let embed = Embed::fake(|e| {
-            e.title(if is_update {
-                Cow::Owned(format!("UPDATE: {title}"))
-            } else {
-                Cow::Borrowed(title)
-            })
+        let embed =
+            Embed::fake(|e| {
+                e.title(title)
             .url(link)
             .thumbnail(icon_url)
             .colour(COLOUR)
@@ -153,12 +126,14 @@ impl DisbahnClient {
                 f.text("Quelle: https://zuginfo.nrw/ \u{2013} Alle Angaben ohne Gewehr \u{1F52B}")
                     .icon_url(FOOTER_ICON_URL)
             })
-        });
+            });
 
         Ok(embed)
     }
 
-    async fn refresh(&mut self) -> anyhow::Result<()> {
+    pub async fn refresh(&mut self) -> anyhow::Result<()> {
+        use crate::database::schema::posts::{self, dsl};
+
         debug!("Refreshing RSS feed ...");
         let channel = Self::get_rss_channel(&self.rss_url)
             .await
@@ -177,53 +152,54 @@ impl DisbahnClient {
                 .naive_utc()
                 .and_utc();
 
-            let is_update;
-            if let Some(last_pub_datetime) = self.known_guids.get(guid)? {
-                if last_pub_datetime < pub_datetime {
-                    is_update = true;
+            let existing_post: Option<Post> = posts
+                .filter(dsl::webhook_id.eq(i64::from_le_bytes(self.webhook.id.0.to_le_bytes())))
+                .filter(dsl::announcement_id.eq(guid))
+                .first(self.database.conn())
+                .optional()
+                .with_context(|| "Error loading posts from database")?;
+
+            if let Some(existing_post) = existing_post {
+                if existing_post.last_updated().and_utc() < pub_datetime {
                     info!("Updated item: {guid}");
-                } else {
-                    continue;
+                    let embed = Self::item_to_embed(item)?;
+                    self.webhook
+                        .edit_message(&self.http, existing_post.message_id(), |w| {
+                            w.embeds(vec![embed])
+                        })
+                        .await
+                        .with_context(|| "Failed to edit message")?;
+
+                    diesel::update(
+                        posts.find((guid, i64::from_le_bytes(self.webhook.id.0.to_le_bytes()))),
+                    )
+                    .set(dsl::last_updated.eq(pub_datetime.naive_utc()))
+                    .execute(self.database.conn())
+                    .with_context(|| "Error updating post in database")?;
                 }
             } else {
-                is_update = false;
                 info!("New item: {guid}");
-            }
+                let embed = Self::item_to_embed(item)?;
+                let message = self
+                    .webhook
+                    .execute(&self.http, true, |w| w.embeds(vec![embed]))
+                    .await
+                    .with_context(|| "Failed to send message")?
+                    .with_context(|| "Discord did not return a message id")?;
 
-            let embed = Self::item_to_embed(item, is_update)?;
-            self.webhook
-                .execute(&self.http, false, |w| w.embeds(vec![embed]))
-                .await
-                .with_context(|| "Failed to execute webhook")?;
-            self.known_guids
-                .insert(guid.to_string(), pub_datetime)
-                .with_context(|| "Failed to write to database")?;
+                diesel::insert_into(posts::table)
+                    .values(NewPost::new(
+                        guid,
+                        self.webhook.id,
+                        message.id,
+                        pub_datetime.naive_utc(),
+                    ))
+                    .execute(self.database.conn())
+                    .with_context(|| "Error inserting new post into database")?;
+            }
         }
 
         debug!("Done.");
         Ok(())
     }
-}
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    dotenvy::dotenv()?;
-
-    env_logger::builder()
-        .filter_module(module_path!(), log::LevelFilter::Debug)
-        .init();
-
-    let webhook_url = env::var("WEBHOOK_URL")?;
-    let feed_url = env::var("FEED_URL")?;
-    let known_guids_db = env::var("KNOWN_GUIDS_DB")?;
-
-    let known_guids_db =
-        RefreshDb(sled::open(known_guids_db).with_context(|| "unable to open database")?);
-
-    let http = Http::new("");
-    let webhook = http.get_webhook_from_url(&webhook_url).await.unwrap();
-
-    let mut disbahn_client = DisbahnClient::new(webhook, http, feed_url, known_guids_db);
-
-    disbahn_client.refresh().await
 }
