@@ -65,6 +65,7 @@ impl DisbahnClient {
         match name {
             "HIM1" => "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a9/Zeichen_123_-_Arbeitsstelle%2C_StVO_2013.svg/273px-Zeichen_123_-_Arbeitsstelle%2C_StVO_2013.svg.png",
             "HIM2" => "https://upload.wikimedia.org/wikipedia/commons/thumb/0/02/Zeichen_101_-_Gefahrstelle%2C_StVO_1970.svg/273px-Zeichen_101_-_Gefahrstelle%2C_StVO_1970.svg.png",
+            "HIM3" => "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6c/Strike_worker.svg/314px-Strike_worker.svg.png",
             _ => "https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/Zeichen_365-61_-_Informationsstelle%2C_StVO_2013.svg/240px-Zeichen_365-61_-_Informationsstelle%2C_StVO_2013.svg.png",
         }
     }
@@ -72,7 +73,7 @@ impl DisbahnClient {
     fn icon_name_to_colour(name: &str) -> u32 {
         match name {
             "HIM1" => 0xf5c211,
-            "HIM2" => 0xc1121c,
+            "HIM2" | "HIM3" => 0xc1121c,
             _ => 0x154889,
         }
     }
