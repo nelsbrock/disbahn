@@ -9,7 +9,6 @@ use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl};
 use lazy_regex::regex;
 use log::{debug, error, info};
 use reqwest::IntoUrl;
-use rss::Item;
 use serenity::http::Http;
 use serenity::json::Value;
 use serenity::model::channel::Embed;
@@ -158,7 +157,7 @@ impl DisbahnClient {
         Ok(())
     }
 
-    async fn refresh_item(&mut self, item: &Item) -> anyhow::Result<()> {
+    async fn refresh_item(&mut self, item: &rss::Item) -> anyhow::Result<()> {
         use crate::database::schema::posts::{self, dsl};
 
         let guid = item.guid().ok_or(anyhow!("Missing GUID"))?.value();
