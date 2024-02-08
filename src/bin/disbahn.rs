@@ -2,7 +2,11 @@ use disbahn::database::Database;
 use disbahn::DisbahnClient;
 use serenity::http::Http;
 use std::env;
-use std::env::VarError;
+use anyhow::Context;
+
+fn env_var(name: &str) -> anyhow::Result<String> {
+    env::var(name).with_context(|| format!("Unable to fetch environment variable {name}"))
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -12,13 +16,9 @@ async fn main() -> anyhow::Result<()> {
         .filter_module(module_path!(), log::LevelFilter::Debug)
         .init();
 
-    let database_url = match env::var("DATABASE_URL") {
-        Ok(url) => url,
-        Err(VarError::NotPresent) => "disbahn.db".to_string(),
-        Err(err) => return Err(err.into()),
-    };
-    let webhook_url = env::var("WEBHOOK_URL")?;
-    let feed_url = env::var("FEED_URL")?;
+    let database_url = env_var("DATABASE_URL")?;
+    let webhook_url = env_var("WEBHOOK_URL")?;
+    let feed_url = env_var("FEED_URL")?;
 
     let database = Database::connect(&database_url)?;
     let http = Http::new("");
