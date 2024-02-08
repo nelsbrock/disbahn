@@ -10,7 +10,11 @@ fn env_var(name: &str) -> anyhow::Result<String> {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    dotenvy::dotenv()?;
+    if let Err(err) = dotenvy::dotenv() {
+        if !err.not_found() {
+            return Err(err).context("Unable to load .env file");
+        }
+    }
 
     env_logger::builder()
         .filter_module(module_path!(), log::LevelFilter::Debug)
