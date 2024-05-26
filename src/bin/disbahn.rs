@@ -5,6 +5,7 @@ use log::error;
 use serenity::http::Http;
 use std::env;
 use std::time::Duration;
+use tokio::io;
 
 fn env_var(name: &str) -> anyhow::Result<String> {
     env::var(name).with_context(|| format!("Unable to fetch environment variable {name}"))
@@ -51,10 +52,17 @@ async fn main() -> anyhow::Result<()> {
         loop {
             let now = chrono::Utc::now().timestamp();
             let sleep_secs = (now / 300 + 1) * 300 - now;
-            tokio::time::sleep(Duration::from_secs(
-                sleep_secs.try_into().expect("sleep_secs is negative"),
-            ))
-            .await;
+            let shutdown = tokio::select! {
+                result = wait_for_shutdown_signal() => {
+                    result.expect("error on waiting for shutdown signal"); true
+                },
+                _ = tokio::time::sleep(
+                    Duration::from_secs(sleep_secs.try_into().expect("sleep_secs is negative"))
+                ) => {false},
+            };
+            if shutdown {
+                break Ok(());
+            }
             if let Err(err) = disbahn_client.refresh().await {
                 error!("{}", err)
             }
@@ -62,4 +70,26 @@ async fn main() -> anyhow::Result<()> {
     } else {
         disbahn_client.refresh().await
     }
+}
+
+async fn wait_for_shutdown_signal() -> io::Result<()> {
+    let ctrl_c = tokio::signal::ctrl_c();
+
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix;
+
+        let sigterm = async {
+            unix::signal(unix::SignalKind::terminate())?.recv().await;
+            Ok(())
+        };
+
+        tokio::select! {
+            result = ctrl_c => { result }
+            result = sigterm => { result }
+        }
+    }
+
+    #[cfg(not(unix))]
+    ctrl_c.await
 }
