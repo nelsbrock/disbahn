@@ -52,7 +52,7 @@ impl DisbahnClient {
         static RE_STRIKETHROUGH: &Lazy<Regex> = regex!(r#"<s\s*>((.|\n)*?)</s\s*>"#i);
         static RE_NEWLINE: &Lazy<Regex> = regex!(r#"<br\s*/?>"#i);
 
-        let input = RE_TIMES.replace(&input, "");
+        let input = RE_TIMES.replace(input, "");
         let input = RE_BOLD.replace_all(&input, "**$1**");
         let input = RE_ITALIC.replace_all(&input, "*$1*");
         let input = RE_STRIKETHROUGH.replace_all(&input, "~~$1~~");
@@ -102,8 +102,7 @@ impl DisbahnClient {
         let icon = categories
             .iter()
             .find(|c| c.domain() == Some("icon"))
-            .map(|c| c.name())
-            .unwrap_or("");
+            .map_or("", |c| c.name());
         let icon_url = Self::icon_name_to_url(icon);
 
         let description = Self::html_to_discord_markdown(
@@ -122,8 +121,8 @@ impl DisbahnClient {
             .thumbnail(icon_url)
             .colour(Self::icon_name_to_colour(icon))
             .description(description)
-            .field("Beginn:", format!("<t:{}:F>", validity_begin), true)
-            .field("Ende:", format!("<t:{}:F>", validity_end), true)
+            .field("Beginn:", format!("<t:{validity_begin}:F>"), true)
+            .field("Ende:", format!("<t:{validity_end}:F>"), true)
             .field("Hinweis:", include_str!("hint.txt"), false)
             .timestamp(pub_datetime)
             .footer(

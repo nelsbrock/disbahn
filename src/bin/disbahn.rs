@@ -59,13 +59,13 @@ async fn main() -> anyhow::Result<()> {
                 result = wait_for_shutdown_signal() => {
                     result.expect("error on waiting for shutdown signal"); true
                 },
-                _ = tokio::time::sleep(Duration::from_secs(sleep_duration)) => false,
+                () = tokio::time::sleep(Duration::from_secs(sleep_duration)) => false,
             };
             if shutdown {
                 break Ok(());
             }
             if let Err(err) = disbahn_client.refresh().await {
-                error!("{}", err)
+                error!("{}", err);
             }
         }
     } else {
