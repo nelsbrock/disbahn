@@ -6,7 +6,7 @@ use crate::database::Database;
 use anyhow::{anyhow, Context};
 use chrono::{DateTime, NaiveDateTime, TimeZone};
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl};
-use lazy_regex::regex;
+use lazy_regex::{regex, Lazy, Regex};
 use log::{debug, error, info};
 use reqwest::IntoUrl;
 use serenity::all::{CreateEmbed, CreateEmbedFooter, EditWebhookMessage, ExecuteWebhook};
@@ -46,17 +46,17 @@ impl DisbahnClient {
     }
 
     fn html_to_discord_markdown(input: &str) -> String {
-        let re_times = regex!(r#"^.*<br\s*/>\s*<br\s*/>"#i);
-        let re_bold = regex!(r#"<b\s*>((.|\n)*?)</b\s*>"#i);
-        let re_italic = regex!(r#"<i\s*>((.|\n)*?)</i\s*>"#i);
-        let re_strikethrough = regex!(r#"<s\s*>((.|\n)*?)</s\s*>"#i);
-        let re_newline = regex!(r#"<br\s*/?>"#i);
+        static RE_TIMES: &Lazy<Regex> = regex!(r#"^.*<br\s*/>\s*<br\s*/>"#i);
+        static RE_BOLD: &Lazy<Regex> = regex!(r#"<b\s*>((.|\n)*?)</b\s*>"#i);
+        static RE_ITALIC: &Lazy<Regex> = regex!(r#"<i\s*>((.|\n)*?)</i\s*>"#i);
+        static RE_STRIKETHROUGH: &Lazy<Regex> = regex!(r#"<s\s*>((.|\n)*?)</s\s*>"#i);
+        static RE_NEWLINE: &Lazy<Regex> = regex!(r#"<br\s*/?>"#i);
 
-        let input = re_times.replace(input, "");
-        let input = re_bold.replace_all(&input, "**$1**");
-        let input = re_italic.replace_all(&input, "*$1*");
-        let input = re_strikethrough.replace_all(&input, "~~$1~~");
-        let input = re_newline.replace_all(&input, "\n");
+        let input = RE_TIMES.replace(&input, "");
+        let input = RE_BOLD.replace_all(&input, "**$1**");
+        let input = RE_ITALIC.replace_all(&input, "*$1*");
+        let input = RE_STRIKETHROUGH.replace_all(&input, "~~$1~~");
+        let input = RE_NEWLINE.replace_all(&input, "\n");
         input.to_string()
     }
 
