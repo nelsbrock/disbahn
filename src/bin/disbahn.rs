@@ -7,6 +7,8 @@ use std::env;
 use std::time::Duration;
 use tokio::io;
 
+const DAEMON_INTERVAL_SECS: i64 = 300;
+
 fn env_var(name: &str) -> anyhow::Result<String> {
     env::var(name).with_context(|| format!("Unable to fetch environment variable {name}"))
 }
@@ -51,14 +53,13 @@ async fn main() -> anyhow::Result<()> {
     if daemon {
         loop {
             let now = chrono::Utc::now().timestamp();
-            let sleep_secs = (now / 300 + 1) * 300 - now;
+            let sleep_secs = (now / DAEMON_INTERVAL_SECS + 1) * DAEMON_INTERVAL_SECS - now;
+            let sleep_duration = sleep_secs.try_into().expect("sleep_secs is negative");
             let shutdown = tokio::select! {
                 result = wait_for_shutdown_signal() => {
                     result.expect("error on waiting for shutdown signal"); true
                 },
-                _ = tokio::time::sleep(
-                    Duration::from_secs(sleep_secs.try_into().expect("sleep_secs is negative"))
-                ) => false,
+                _ = tokio::time::sleep(Duration::from_secs(sleep_duration)) => false,
             };
             if shutdown {
                 break Ok(());
