@@ -58,7 +58,7 @@ async fn main() -> anyhow::Result<()> {
                 },
                 _ = tokio::time::sleep(
                     Duration::from_secs(sleep_secs.try_into().expect("sleep_secs is negative"))
-                ) => {false},
+                ) => false,
             };
             if shutdown {
                 break Ok(());
@@ -85,8 +85,8 @@ async fn wait_for_shutdown_signal() -> io::Result<()> {
         };
 
         tokio::select! {
-            result = ctrl_c => { result }
-            result = sigterm => { result }
+            result = ctrl_c => result,
+            result = sigterm => result,
         }
     }
 
