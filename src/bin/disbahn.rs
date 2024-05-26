@@ -34,7 +34,7 @@ async fn main() -> anyhow::Result<()> {
         None => false,
     };
 
-    if let Some(_) = args.next() {
+    if args.next().is_some() {
         return Err(anyhow!("too many arguments"));
     }
 

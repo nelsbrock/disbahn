@@ -9,9 +9,8 @@ use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl};
 use lazy_regex::regex;
 use log::{debug, error, info};
 use reqwest::IntoUrl;
+use serenity::all::{CreateEmbed, CreateEmbedFooter, EditWebhookMessage, ExecuteWebhook};
 use serenity::http::Http;
-use serenity::json::Value;
-use serenity::model::channel::Embed;
 use serenity::model::webhook::Webhook;
 
 pub struct DisbahnClient {
@@ -78,7 +77,7 @@ impl DisbahnClient {
         }
     }
 
-    fn item_to_embed(item: &rss::Item) -> anyhow::Result<Value> {
+    fn item_to_embed(item: &rss::Item) -> anyhow::Result<CreateEmbed> {
         const FOOTER_ICON_URL: &str = "https://www.zuginfo.nrw/img/customer/apple-touch-icon.png";
 
         let categories = item.categories();
@@ -117,11 +116,8 @@ impl DisbahnClient {
             .naive_utc()
             .and_utc();
 
-        let pub_timestamp = pub_datetime.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-
-        let embed =
-            Embed::fake(|e| {
-                e.title(title)
+        let embed = CreateEmbed::new()
+            .title(title)
             .url(link)
             .thumbnail(icon_url)
             .colour(Self::icon_name_to_colour(icon))
@@ -129,12 +125,13 @@ impl DisbahnClient {
             .field("Beginn:", format!("<t:{}:F>", validity_begin), true)
             .field("Ende:", format!("<t:{}:F>", validity_end), true)
             .field("Hinweis:", include_str!("hint.txt"), false)
-            .timestamp(pub_timestamp)
-            .footer(|f| {
-                f.text("Quelle: https://zuginfo.nrw/ \u{2013} Alle Angaben ohne Gewehr \u{1F52B}")
-                    .icon_url(FOOTER_ICON_URL)
-            })
-            });
+            .timestamp(pub_datetime)
+            .footer(
+                CreateEmbedFooter::new(
+                    "Quelle: https://zuginfo.nrw/ \u{2013} Alle Angaben ohne Gewehr \u{1F52B}",
+                )
+                .icon_url(FOOTER_ICON_URL),
+            );
 
         Ok(embed)
     }
@@ -169,7 +166,7 @@ impl DisbahnClient {
             .and_utc();
 
         let existing_post: Option<Post> = posts
-            .filter(dsl::webhook_id.eq(i64::from_le_bytes(self.webhook.id.0.to_le_bytes())))
+            .filter(dsl::webhook_id.eq(i64::from_le_bytes(self.webhook.id.get().to_le_bytes())))
             .filter(dsl::announcement_id.eq(guid))
             .first(self.database.conn())
             .optional()
@@ -180,15 +177,18 @@ impl DisbahnClient {
                 info!("Updated item: {guid}");
                 let embed = Self::item_to_embed(item)?;
                 self.webhook
-                    .edit_message(&self.http, existing_post.message_id(), |w| {
-                        w.embeds(vec![embed])
-                    })
+                    .edit_message(
+                        &self.http,
+                        existing_post.message_id(),
+                        EditWebhookMessage::new().add_embed(embed),
+                    )
                     .await
                     .with_context(|| "Failed to edit message")?;
 
-                diesel::update(
-                    posts.find((guid, i64::from_le_bytes(self.webhook.id.0.to_le_bytes()))),
-                )
+                diesel::update(posts.find((
+                    guid,
+                    i64::from_le_bytes(self.webhook.id.get().to_le_bytes()),
+                )))
                 .set(dsl::last_updated.eq(pub_datetime.naive_utc()))
                 .execute(self.database.conn())
                 .with_context(|| "Error updating post in database")?;
@@ -198,7 +198,7 @@ impl DisbahnClient {
             let embed = Self::item_to_embed(item)?;
             let message = self
                 .webhook
-                .execute(&self.http, true, |w| w.embeds(vec![embed]))
+                .execute(&self.http, true, ExecuteWebhook::new().embed(embed))
                 .await
                 .with_context(|| "Failed to send message")?
                 .with_context(|| "Discord did not return a message id")?;

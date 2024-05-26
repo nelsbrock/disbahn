@@ -17,11 +17,11 @@ pub struct Post {
 
 impl Post {
     pub fn webhook_id(&self) -> WebhookId {
-        WebhookId(u64::from_le_bytes(self.webhook_id.to_le_bytes()))
+        WebhookId::new(u64::from_le_bytes(self.webhook_id.to_le_bytes()))
     }
 
     pub fn message_id(&self) -> MessageId {
-        MessageId(u64::from_le_bytes(self.message_id.to_le_bytes()))
+        MessageId::new(u64::from_le_bytes(self.message_id.to_le_bytes()))
     }
 }
 
@@ -43,8 +43,8 @@ impl<'a> NewPost<'a> {
     ) -> Self {
         Self {
             announcement_id: announcement_id.into(),
-            webhook_id: i64::from_le_bytes(webhook_id.0.to_le_bytes()),
-            message_id: i64::from_le_bytes(message_id.0.to_le_bytes()),
+            webhook_id: i64::from_le_bytes(webhook_id.get().to_le_bytes()),
+            message_id: i64::from_le_bytes(message_id.get().to_le_bytes()),
             last_updated,
         }
     }
