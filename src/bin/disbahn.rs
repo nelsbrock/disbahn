@@ -1,8 +1,10 @@
+use anyhow::{anyhow, Context};
 use disbahn::database::Database;
 use disbahn::DisbahnClient;
+use log::error;
 use serenity::http::Http;
 use std::env;
-use anyhow::Context;
+use std::time::Duration;
 
 fn env_var(name: &str) -> anyhow::Result<String> {
     env::var(name).with_context(|| format!("Unable to fetch environment variable {name}"))
@@ -20,6 +22,21 @@ async fn main() -> anyhow::Result<()> {
         .filter_module(module_path!(), log::LevelFilter::Debug)
         .init();
 
+    let mut args = env::args().skip(1);
+    let daemon = match args.next() {
+        Some(s) if s == "daemon" => true,
+        Some(s) => {
+            return Err(anyhow!(format!(
+                "invalid argument `{s}`; the only allowed argument is `daemon`"
+            )))
+        }
+        None => false,
+    };
+
+    if let Some(_) = args.next() {
+        return Err(anyhow!("too many arguments"));
+    }
+
     let database_url = env_var("DATABASE_URL")?;
     let webhook_url = env_var("WEBHOOK_URL")?;
     let feed_url = env_var("FEED_URL")?;
@@ -30,5 +47,19 @@ async fn main() -> anyhow::Result<()> {
 
     let mut disbahn_client = DisbahnClient::new(database, webhook, http, feed_url);
 
-    disbahn_client.refresh().await
+    if daemon {
+        loop {
+            let now = chrono::Utc::now().timestamp();
+            let sleep_secs = (now / 300 + 1) * 300 - now;
+            tokio::time::sleep(Duration::from_secs(
+                sleep_secs.try_into().expect("sleep_secs is negative"),
+            ))
+            .await;
+            if let Err(err) = disbahn_client.refresh().await {
+                error!("{}", err)
+            }
+        }
+    } else {
+        disbahn_client.refresh().await
+    }
 }
