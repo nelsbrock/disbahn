@@ -123,7 +123,7 @@ impl DisbahnClient {
             .description(description)
             .field("Beginn:", format!("<t:{validity_begin}:F>"), true)
             .field("Ende:", format!("<t:{validity_end}:F>"), true)
-            .field("Hinweis:", include_str!("hint.txt"), false)
+            .field("", include_str!("hint.txt"), false)
             .timestamp(pub_datetime)
             .footer(
                 CreateEmbedFooter::new(
