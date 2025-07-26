@@ -6,21 +6,21 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-rss = "2.0"
-reqwest = {version = "0.12", default-features = false, features = ["rustls-tls"]}
-tokio = {version = "1.37", features = ["rt-multi-thread", "signal"]}
-lazy-regex = "3.1.0"
-chrono = "0.4.38"
-chrono-tz = "0.9.0"
-anyhow = "1.0.86"
-log = "0.4.21"
-env_logger = "0.11.3"
+rss = "2.0.12"
+reqwest = {version = "0.12.22", default-features = false, features = ["rustls-tls"]}
+tokio = {version = "1.47.0", features = ["rt-multi-thread", "signal"]}
+lazy-regex = "3.4.1"
+chrono = "0.4.41"
+chrono-tz = "0.10.4"
+anyhow = "1.0.98"
+log = "0.4.27"
+env_logger = "0.11.8"
 dotenvy = "0.15.7"
-diesel = { version = "2.1.6", features = ["sqlite", "chrono"] }
-diesel_migrations = "2.1.0"
-getset = "0.1.2"
+diesel = { version = "2.2.12", features = ["sqlite", "chrono"] }
+diesel_migrations = "2.2.0"
+getset = "0.1.6"
 
 [dependencies.serenity]
-version = "0.12"
+version = "0.12.4"
 default-features = false
 features = ["builder", "cache", "chrono", "client", "gateway", "http", "model", "utils", "rustls_backend"]
