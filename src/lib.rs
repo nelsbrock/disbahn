@@ -121,13 +121,12 @@ impl DisbahnClient {
             .thumbnail(icon_url)
             .colour(Self::icon_name_to_colour(icon))
             .description(description)
-            .field("Beginn:", format!("<t:{validity_begin}:F>"), true)
-            .field("Ende:", format!("<t:{validity_end}:F>"), true)
-            .field("", include_str!("hint.txt"), false)
+            .field("Beginn:", format!("<t:{validity_begin}:f>"), true)
+            .field("Ende:", format!("<t:{validity_end}:f>"), true)
             .timestamp(pub_datetime)
             .footer(
                 CreateEmbedFooter::new(
-                    "Quelle: https://zuginfo.nrw/ \u{2013} Alle Angaben ohne Gewehr \u{1F52B}",
+                    "Quelle: zuginfo.nrw \u{2013} Alle Angaben ohne Gewehr \u{1F52B}",
                 )
                 .icon_url(FOOTER_ICON_URL),
             );
